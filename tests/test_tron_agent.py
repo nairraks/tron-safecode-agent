@@ -196,6 +196,7 @@ def test_format_remediation_prompt():
 # ---------------------------------------------------------------------------
 
 def test_claude_code_stop_permit(monkeypatch, tmp_path):
+    monkeypatch.setenv("GOOGLE_API_KEY", "fake-key-for-test")
     permit_verdict: Verdict = {"decision": "PERMIT", "reason": "safe", "policies": []}
     reviewer = MagicMock(spec=SecurityReviewer)
     reviewer.run_review.return_value = permit_verdict
@@ -212,6 +213,7 @@ def test_claude_code_stop_permit(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_claude_code_stop_deny_exits_nonzero(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GOOGLE_API_KEY", "fake-key-for-test")
     deny_verdict: Verdict = {
         "decision": "DENY",
         "reason": "hardcoded secret",
@@ -232,6 +234,41 @@ def test_claude_code_stop_deny_exits_nonzero(monkeypatch, tmp_path, capsys):
     assert payload["decision"] == "block"
     assert "SECURITY REVIEW FAILED" in payload["reason"]
     assert "SEC-001" in payload["reason"]
+
+
+# ---------------------------------------------------------------------------
+# 10b. test_claude_code_stop_missing_api_key_blocks_with_clear_message
+# ---------------------------------------------------------------------------
+
+def test_claude_code_stop_missing_api_key_blocks_with_clear_message(monkeypatch, tmp_path, capsys):
+    for var in ("GOOGLE_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))  # prevent ~/.tron-agent/config.yaml loading
+
+    monkeypatch.setattr("sys.stdin", StringIO("{}"))
+    with pytest.raises(SystemExit) as exc_info:
+        handle_claude_code_stop(cwd=tmp_path)
+    assert exc_info.value.code == 2
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["decision"] == "block"
+    assert "GOOGLE_API_KEY" in payload["reason"]
+    assert "TRON_FAIL_OPEN" in payload["reason"]
+
+
+# ---------------------------------------------------------------------------
+# 10c. test_claude_code_stop_missing_api_key_fail_open_permits
+# ---------------------------------------------------------------------------
+
+def test_claude_code_stop_missing_api_key_fail_open_permits(monkeypatch, tmp_path):
+    for var in ("GOOGLE_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("TRON_FAIL_OPEN", "1")
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    monkeypatch.setattr("sys.stdin", StringIO("{}"))
+    with pytest.raises(SystemExit) as exc_info:
+        handle_claude_code_stop(cwd=tmp_path)
+    assert exc_info.value.code == 0
 
 
 # ---------------------------------------------------------------------------

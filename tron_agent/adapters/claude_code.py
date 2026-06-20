@@ -1,13 +1,35 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
 from ..agent import SecurityReviewer
+from ..config import load_config
 from .feedback import format_remediation_prompt
+
+_API_KEY_VARS = ("GOOGLE_API_KEY", "GEMINI_API_KEY")
+
+_MISSING_KEY_MESSAGE = """\
+tron-agent: GOOGLE_API_KEY is not set.
+
+Security reviews cannot run without a Gemini API key.
+
+Quick fix:
+  export GOOGLE_API_KEY=your-key-here
+
+Get a free key at: https://ai.google.dev/gemini-api/docs/api-key
+
+To skip reviews when no key is available (not recommended for production):
+  export TRON_FAIL_OPEN=1\
+"""
+
+
+def _api_key_available() -> bool:
+    return any(os.environ.get(v) for v in _API_KEY_VARS)
 
 
 def get_diff(cwd: Optional[Path] = None) -> str:
@@ -78,6 +100,14 @@ def handle_claude_code_stop(
         json.load(sys.stdin)
     except Exception:
         pass
+
+    # Pre-flight: surface a clear setup error rather than a confusing fail-closed verdict
+    if not _api_key_available():
+        config = load_config()
+        if config.fail_open:
+            sys.exit(0)
+        print(json.dumps({"decision": "block", "reason": _MISSING_KEY_MESSAGE}))
+        sys.exit(2)
 
     diff = get_diff(cwd=cwd)
     if reviewer is None:
