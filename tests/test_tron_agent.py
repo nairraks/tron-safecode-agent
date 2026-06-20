@@ -329,3 +329,49 @@ def test_orchestrator_max_retries_escalates(tmp_path):
     result = orchestrator.run("diff", max_retries=3)
     assert result.status == "escalated"
     assert result.attempts == 3
+
+
+# ---------------------------------------------------------------------------
+# 17. test_orchestrator_zero_retries_raises (fix #2)
+# ---------------------------------------------------------------------------
+
+def test_orchestrator_zero_retries_raises(tmp_path):
+    from tron_agent.config import TronConfig
+
+    config = TronConfig(audit_log_path=tmp_path / "audit.log")
+    reviewer = SecurityReviewer(config=config, before_model_callback=_permit_cb())
+    orchestrator = SecurityOrchestrator(config=config, reviewer=reviewer)
+
+    with pytest.raises(ValueError, match="max_retries must be at least 1"):
+        orchestrator.run("diff", max_retries=0)
+
+
+# ---------------------------------------------------------------------------
+# 18. test_run_wrapped_appends_remediation_to_command (fix #1)
+# ---------------------------------------------------------------------------
+
+def test_run_wrapped_appends_remediation_to_command(tmp_path):
+    from tron_agent.adapters.wrapper import run_wrapped
+    from tron_agent.config import TronConfig
+
+    calls: list[list[str]] = []
+
+    # Sequence: DENY on first call, PERMIT on second
+    cb = _varying_cb([
+        ("DENY", "hardcoded key", "SEC-001"),
+        ("PERMIT", "fixed", ""),
+    ])
+    config = TronConfig(audit_log_path=tmp_path / "audit.log")
+    reviewer = SecurityReviewer(config=config, before_model_callback=cb)
+
+    with patch("tron_agent.adapters.wrapper.subprocess.run") as mock_run, \
+         patch("tron_agent.adapters.wrapper.get_diff", return_value=""):
+        mock_run.side_effect = lambda cmd, **kw: calls.append(cmd)
+        result = run_wrapped(["codex", "build feature X"], reviewer=reviewer, max_retries=3)
+
+    assert result == 0
+    assert len(calls) == 2
+    # Second invocation should have the remediation appended to the last arg
+    assert calls[1][0] == "codex"
+    assert "SECURITY REVIEW FAILED" in calls[1][1]
+    assert "build feature X" in calls[1][1]

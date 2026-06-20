@@ -37,6 +37,8 @@ class SecurityOrchestrator:
         max_retries: Optional[int] = None,
     ) -> OrchestratorResult:
         retries = max_retries if max_retries is not None else self._config.max_retries
+        if retries <= 0:
+            raise ValueError(f"max_retries must be at least 1, got {retries}")
         last_verdict: Optional[Verdict] = None
 
         for attempt in range(retries):
@@ -57,11 +59,12 @@ class SecurityOrchestrator:
                 if asyncio.iscoroutine(result):
                     await result
 
+        assert last_verdict is not None  # guaranteed: retries >= 1, loop always runs once
         return OrchestratorResult(
             status="escalated",
             attempts=retries,
-            verdict=last_verdict,  # type: ignore[arg-type]
-            policy_ids=last_verdict["policies"] if last_verdict else [],
+            verdict=last_verdict,
+            policy_ids=last_verdict["policies"],
         )
 
     def run(
