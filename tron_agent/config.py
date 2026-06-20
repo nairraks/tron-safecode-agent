@@ -19,7 +19,29 @@ class TronConfig:
     policies_path: Optional[Path] = None
 
 
+def _load_dotenv() -> None:
+    project_root = Path(__file__).resolve().parent.parent
+    dotenv_paths = [project_root / ".env", Path.cwd() / ".env"]
+    for path in dotenv_paths:
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if "=" in line:
+                            key, val = line.split("=", 1)
+                            key = key.strip()
+                            val = val.strip().strip("'\"")
+                            if key and key not in os.environ:
+                                os.environ[key] = val
+            except Exception:
+                pass
+
+
 def load_config(config_path: Optional[Path] = None) -> TronConfig:
+    _load_dotenv()
     cfg = TronConfig()
     _apply_file(cfg, config_path or Path.home() / ".tron-agent" / "config.yaml")
     _apply_env(cfg)

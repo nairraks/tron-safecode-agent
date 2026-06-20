@@ -475,3 +475,40 @@ def test_orchestrator_diff_provider_refreshes_on_retry(tmp_path):
     # First attempt uses the initial diff; second attempt uses provider output
     assert diffs_seen[0] == "original diff"
     assert diffs_seen[1] == "updated diff after fix"
+
+
+# ---------------------------------------------------------------------------
+# 21. test_load_config_dotenv_loading
+# ---------------------------------------------------------------------------
+
+def test_load_config_dotenv_loading(tmp_path, monkeypatch):
+    import os
+    from pathlib import Path
+    import tron_agent.config as config_mod
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    test_env = tmp_path / ".env"
+    test_env.write_text("TEST_DOTENV_VAR=loaded_value\nGEMINI_API_KEY=test-gemini-key\n", encoding="utf-8")
+
+    # Mock Path.exists to isolate test from the real project's .env
+    original_exists = Path.exists
+    def mock_exists(self):
+        if self.name == ".env":
+            return self.parent == tmp_path
+        return original_exists(self)
+    monkeypatch.setattr(Path, "exists", mock_exists)
+
+    monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
+    monkeypatch.delenv("TEST_DOTENV_VAR", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    config_mod.load_config()
+
+    assert os.environ.get("TEST_DOTENV_VAR") == "loaded_value"
+    assert os.environ.get("GEMINI_API_KEY") == "test-gemini-key"
+
+    # Clean up
+    monkeypatch.delenv("TEST_DOTENV_VAR", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+
