@@ -168,7 +168,9 @@ def test_run_review_async_permit():
 # ---------------------------------------------------------------------------
 
 def test_run_review_async_deny_on_api_error():
-    reviewer = SecurityReviewer(before_model_callback=_error_cb("API quota exceeded"))
+    from tron_agent.config import TronConfig
+    config = TronConfig(fail_open=False)  # explicit: don't load ~/.tron-agent/config.yaml
+    reviewer = SecurityReviewer(config=config, before_model_callback=_error_cb("API quota exceeded"))
     verdict = asyncio.run(reviewer.run_review_async("diff"))
     assert verdict["decision"] == "DENY"
     assert "fail-closed" in verdict["reason"] or "error" in verdict["reason"].lower()
