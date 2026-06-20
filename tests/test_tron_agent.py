@@ -224,10 +224,14 @@ def test_claude_code_stop_deny_exits_nonzero(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr("sys.stdin", StringIO("{}"))
     with pytest.raises(SystemExit) as exc_info:
         handle_claude_code_stop(reviewer=reviewer, cwd=tmp_path)
-    assert exc_info.value.code == 1
+    # Exit 2 blocks the Stop action (exit 1 would let it proceed — fail-open)
+    assert exc_info.value.code == 2
     captured = capsys.readouterr()
-    assert "SECURITY REVIEW FAILED" in captured.out
-    assert "SEC-001" in captured.out
+    # Output must be structured JSON that Claude Code feeds back as context
+    payload = json.loads(captured.out.strip())
+    assert payload["decision"] == "block"
+    assert "SECURITY REVIEW FAILED" in payload["reason"]
+    assert "SEC-001" in payload["reason"]
 
 
 # ---------------------------------------------------------------------------
@@ -375,3 +379,62 @@ def test_run_wrapped_appends_remediation_to_command(tmp_path):
     assert calls[1][0] == "codex"
     assert "SECURITY REVIEW FAILED" in calls[1][1]
     assert "build feature X" in calls[1][1]
+
+
+# ---------------------------------------------------------------------------
+# 19. test_get_diff_includes_untracked_files (review comment fix)
+# ---------------------------------------------------------------------------
+
+def test_get_diff_includes_untracked_files(tmp_path):
+    # Set up a repo with one commit, then create an untracked file
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True, capture_output=True)
+    tracked = tmp_path / "existing.py"
+    tracked.write_text("x = 1\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+
+    untracked = tmp_path / "secret.py"
+    untracked.write_text('API_KEY = "hardcoded-secret-12345"\n')
+
+    result = get_diff(cwd=tmp_path)
+    assert "secret.py" in result
+    assert "hardcoded-secret-12345" in result
+
+
+# ---------------------------------------------------------------------------
+# 20. test_orchestrator_diff_provider_refreshes_on_retry (review comment fix)
+# ---------------------------------------------------------------------------
+
+def test_orchestrator_diff_provider_refreshes_on_retry(tmp_path):
+    from tron_agent.config import TronConfig
+
+    config = TronConfig(audit_log_path=tmp_path / "audit.log")
+    cb = _varying_cb([
+        ("DENY", "hardcoded key", "SEC-001"),
+        ("PERMIT", "fixed", ""),
+    ])
+    reviewer = SecurityReviewer(config=config, before_model_callback=cb)
+    orchestrator = SecurityOrchestrator(config=config, reviewer=reviewer)
+
+    diffs_seen: list[str] = []
+    # provider is only called from attempt 1 onward; attempt 0 uses the initial diff arg
+    diff_calls = iter(["updated diff after fix"])
+
+    def provider() -> str:
+        return next(diff_calls)
+
+    # Capture diffs passed to run_review_async by patching write_audit_log
+    original_log = reviewer.write_audit_log
+    def capturing_log(verdict, diff):
+        diffs_seen.append(diff)
+        return original_log(verdict, diff)
+    reviewer.write_audit_log = capturing_log
+
+    result = orchestrator.run("original diff", diff_provider=provider, max_retries=3)
+    assert result.status == "permitted"
+    assert result.attempts == 2
+    # First attempt uses the initial diff; second attempt uses provider output
+    assert diffs_seen[0] == "original diff"
+    assert diffs_seen[1] == "updated diff after fix"

@@ -8,6 +8,7 @@ from .agent import SecurityReviewer, Verdict
 from .config import TronConfig, load_config
 
 RemediationCallback = Callable[[Verdict], Union[None, Awaitable[None]]]
+DiffProvider = Callable[[], str]
 
 
 @dataclass
@@ -35,15 +36,30 @@ class SecurityOrchestrator:
         diff: str,
         remediation_callback: Optional[RemediationCallback] = None,
         max_retries: Optional[int] = None,
+        diff_provider: Optional[DiffProvider] = None,
     ) -> OrchestratorResult:
+        """Run the review-fix loop.
+
+        Args:
+            diff: Initial diff to review.
+            remediation_callback: Called with the DENY verdict before each retry.
+            max_retries: Override config max_retries (must be >= 1).
+            diff_provider: If provided, called before each retry to re-read the
+                           current diff so the reviewer sees post-remediation changes
+                           rather than replaying the original string.
+        """
         retries = max_retries if max_retries is not None else self._config.max_retries
         if retries <= 0:
             raise ValueError(f"max_retries must be at least 1, got {retries}")
         last_verdict: Optional[Verdict] = None
+        current_diff = diff
 
         for attempt in range(retries):
-            verdict = await self._reviewer.run_review_async(diff)
-            self._reviewer.write_audit_log(verdict, diff)
+            if attempt > 0 and diff_provider is not None:
+                current_diff = diff_provider()
+
+            verdict = await self._reviewer.run_review_async(current_diff)
+            self._reviewer.write_audit_log(verdict, current_diff)
             last_verdict = verdict
 
             if verdict["decision"] == "PERMIT":
@@ -72,5 +88,6 @@ class SecurityOrchestrator:
         diff: str,
         remediation_callback: Optional[RemediationCallback] = None,
         max_retries: Optional[int] = None,
+        diff_provider: Optional[DiffProvider] = None,
     ) -> OrchestratorResult:
-        return asyncio.run(self.run_async(diff, remediation_callback, max_retries))
+        return asyncio.run(self.run_async(diff, remediation_callback, max_retries, diff_provider))
