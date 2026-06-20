@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -72,6 +73,53 @@ def wrap(
             )
         )
         raise typer.Exit(2)
+
+
+_GLOBAL_SETTINGS = Path.home() / ".claude" / "settings.json"
+_HOOK_COMMAND = "tron-agent review --mode session"
+
+
+@app.command()
+def install() -> None:
+    """Register the tron-agent Stop hook in ~/.claude/settings.json (all sessions)."""
+    _GLOBAL_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+
+    data: dict = {}
+    if _GLOBAL_SETTINGS.exists():
+        data = json.loads(_GLOBAL_SETTINGS.read_text()) or {}
+
+    hook_entry = {"type": "command", "command": _HOOK_COMMAND}
+    stop_hooks: list[dict] = data.setdefault("hooks", {}).setdefault("Stop", [])
+
+    for group in stop_hooks:
+        for h in group.get("hooks", []):
+            if h.get("command") == _HOOK_COMMAND:
+                console.print("[yellow]tron-agent Stop hook is already installed globally.[/yellow]")
+                return
+
+    stop_hooks.append({"matcher": "", "hooks": [hook_entry]})
+    _GLOBAL_SETTINGS.write_text(json.dumps(data, indent=2) + "\n")
+    console.print(f"[green]Installed:[/green] Stop hook written to {_GLOBAL_SETTINGS}")
+    console.print("tron-agent will now review every Claude Code session on this machine.")
+
+
+@app.command()
+def uninstall() -> None:
+    """Remove the tron-agent Stop hook from ~/.claude/settings.json."""
+    if not _GLOBAL_SETTINGS.exists():
+        console.print("[yellow]No global settings found — nothing to remove.[/yellow]")
+        return
+
+    data = json.loads(_GLOBAL_SETTINGS.read_text()) or {}
+    stop_hooks: list[dict] = data.get("hooks", {}).get("Stop", [])
+    cleaned = [
+        {**g, "hooks": [h for h in g.get("hooks", []) if h.get("command") != _HOOK_COMMAND]}
+        for g in stop_hooks
+    ]
+    cleaned = [g for g in cleaned if g.get("hooks")]
+    data.setdefault("hooks", {})["Stop"] = cleaned
+    _GLOBAL_SETTINGS.write_text(json.dumps(data, indent=2) + "\n")
+    console.print(f"[green]Uninstalled:[/green] Stop hook removed from {_GLOBAL_SETTINGS}")
 
 
 def _print_verdict(verdict: Verdict) -> None:
