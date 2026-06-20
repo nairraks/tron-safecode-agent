@@ -1,0 +1,40 @@
+policies:
+  - id: SEC-001
+    severity: critical
+    rule: "No hardcoded secrets/API keys/credentials"
+    description: "Code must not contain hardcoded API keys, passwords, tokens, or other credentials."
+
+  - id: SEC-002
+    severity: critical
+    rule: "No destructive data ops (DROP TABLE, rm -rf) without guards"
+    description: "Destructive operations must have explicit guards or dry-run modes."
+
+  - id: SEC-003
+    severity: critical
+    rule: "No remote data exfiltration (local files to external POST)"
+    description: "Local file contents must not be sent to external services."
+
+  - id: SEC-004
+    severity: high
+    rule: "No executable injection (curl|bash, eval on untrusted input)"
+    description: "Avoid curl|bash patterns, eval/exec on external input."
+
+  - id: SEC-005
+    severity: high
+    rule: "No dependency confusion attacks"
+    description: "Pin all dependency versions with hashes; verify package sources."
+
+  - id: SEC-006
+    severity: high
+    rule: "No plaintext secrets in config files"
+    description: "Config files must not contain plaintext secrets."
+
+  - id: SEC-007
+    severity: medium
+    rule: "No prompt injection artifacts in notebooks/markdown"
+    description: "Notebooks and markdown must not contain prompt injection payloads."
+
+  - id: SEC-008
+    severity: medium
+    rule: "WARN on broad exception suppression in security-critical paths"
+    description: "Broad except clauses in security paths should be avoided."
