@@ -10,7 +10,7 @@ import yaml
 
 @dataclass
 class TronConfig:
-    model: str = "gemini-2.0-flash"
+    model: str = "gemini-2.5-flash"
     fail_open: bool = False
     max_retries: int = 3
     audit_log_path: Path = field(

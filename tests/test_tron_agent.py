@@ -132,7 +132,7 @@ def test_load_config_defaults(tmp_path, monkeypatch):
     # Point home to tmp_path so no real ~/.tron-agent/config.yaml is loaded
     monkeypatch.setenv("HOME", str(tmp_path))
     config = load_config()
-    assert config.model == "gemini-2.0-flash"
+    assert config.model == "gemini-2.5-flash"
     assert config.fail_open is False
     assert config.max_retries == 3
 
@@ -292,7 +292,7 @@ def test_audit_log_writes_jsonl(tmp_path):
 
     audit_log = tmp_path / "audit.log"
     config = TronConfig(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         audit_log_path=audit_log,
     )
     reviewer = SecurityReviewer(config=config, before_model_callback=_permit_cb())
